@@ -216,6 +216,7 @@ A colour-coded heatmap showing which policies apply to which users:
 - **B** (Red) = Block Access
 - **M** (Orange) = MFA Required
 - **C** (Blue) = Device Compliance Required
+- **MC** (Purple) = MFA + Device Compliance Required (policy requires both)
 - **G** (Green) = Grant with other controls
 - **-** (Grey) = Not Applied
 

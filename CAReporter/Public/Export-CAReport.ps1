@@ -182,6 +182,9 @@ function Export-CAReport {
                 if ($match.IsBlocking) {
                     $cells += "<td class='matrix-cell cell-block' title='Block'>B</td>"
                 }
+                elseif ($match.RequiresMfa -and $match.RequiresCompliance) {
+                    $cells += "<td class='matrix-cell cell-mfa-compliance' title='MFA + Device Compliance'>MC</td>"
+                }
                 elseif ($match.RequiresMfa) {
                     $cells += "<td class='matrix-cell cell-mfa' title='MFA Required'>M</td>"
                 }
@@ -569,6 +572,7 @@ function Export-CAReport {
         .cell-block { background: #7f1d1d; color: #fca5a5; }
         .cell-mfa { background: #78350f; color: #fcd34d; }
         .cell-compliance { background: #1e3a5f; color: #93c5fd; }
+        .cell-mfa-compliance { background: #4a2060; color: #d8b4fe; font-size: 0.6rem; letter-spacing: -0.5px; }
         .cell-grant { background: #14532d; color: #86efac; }
         .cell-na { background: transparent; color: var(--text-muted); }
 
@@ -766,6 +770,7 @@ function Export-CAReport {
                 <div class="legend-item"><span class="legend-swatch" style="background:#7f1d1d;">B</span> Block</div>
                 <div class="legend-item"><span class="legend-swatch" style="background:#78350f;">M</span> MFA Required</div>
                 <div class="legend-item"><span class="legend-swatch" style="background:#1e3a5f;">C</span> Device Compliance</div>
+                <div class="legend-item"><span class="legend-swatch" style="background:#4a2060;font-size:0.6rem;letter-spacing:-0.5px;">MC</span> MFA + Device Compliance</div>
                 <div class="legend-item"><span class="legend-swatch" style="background:#14532d;">G</span> Grant with Controls</div>
                 <div class="legend-item"><span class="legend-swatch" style="background:transparent;color:#64748b;border:1px solid #334155;">-</span> Not Applied</div>
             </div>
