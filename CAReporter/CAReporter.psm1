@@ -41,6 +41,7 @@ $script:AppCompletions = [ordered]@{
     'ExchangeRESTAPI'        = 'fc780465-2017-40d4-a0c5-307022471b92'
     'Office365ManagementAPI' = '00b41c95-dab0-4487-9791-b9d2c32c80f2'
     'DefenderCloudApps'      = '09abbdfd-ed23-44ee-a2d9-a627aa1c90f3'
+    'Microsoft Graph'        = '00000003-0000-0000-c000-000000000000'
 }
 
 $appCompleter = {
