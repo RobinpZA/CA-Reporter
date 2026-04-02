@@ -11,7 +11,7 @@ function Resolve-AppDisplayName {
         [hashtable]$AppNameCache = @{}
     )
 
-    $wellKnown = Get-WellKnownAppId
+    $wellKnown = $script:WellKnownAppIds
 
     if ($wellKnown.ContainsKey($AppId)) {
         return $wellKnown[$AppId]

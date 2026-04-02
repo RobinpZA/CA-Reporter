@@ -23,7 +23,7 @@ function Export-CAReport {
     .EXAMPLE
         Export-CAReport -AnalysisResults $analysis -Policies $policies -OutputPath '.\CAReport.html'
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)]
         $AnalysisResults,
@@ -38,7 +38,7 @@ function Export-CAReport {
         [switch]$OpenReport
     )
 
-    Write-Host '[CAReporter] Generating HTML report...' -ForegroundColor Cyan
+    Write-Verbose '[CAReporter] Generating HTML report...'
 
     $results = $AnalysisResults.Results
     $summary = $AnalysisResults.Summary
@@ -181,6 +181,9 @@ function Export-CAReport {
             if ($match) {
                 if ($match.IsBlocking) {
                     $cells += "<td class='matrix-cell cell-block' title='Block'>B</td>"
+                }
+                elseif ($match.RequiresPhishingResistantMfa) {
+                    $cells += "<td class='matrix-cell cell-phishing-resistant' title='Phishing-Resistant MFA'>PR</td>"
                 }
                 elseif ($match.RequiresMfa -and $match.RequiresCompliance) {
                     $cells += "<td class='matrix-cell cell-mfa-compliance' title='MFA + Device Compliance'>MC</td>"
@@ -570,6 +573,7 @@ function Export-CAReport {
             padding: 4px !important;
         }
         .cell-block { background: #7f1d1d; color: #fca5a5; }
+        .cell-phishing-resistant { background: #0f3330; color: #2dd4bf; font-size: 0.65rem; letter-spacing: -0.5px; }
         .cell-mfa { background: #78350f; color: #fcd34d; }
         .cell-compliance { background: #1e3a5f; color: #93c5fd; }
         .cell-mfa-compliance { background: #4a2060; color: #d8b4fe; font-size: 0.6rem; letter-spacing: -0.5px; }
@@ -768,7 +772,8 @@ function Export-CAReport {
         <div class="section-body">
             <div class="legend">
                 <div class="legend-item"><span class="legend-swatch" style="background:#7f1d1d;">B</span> Block</div>
-                <div class="legend-item"><span class="legend-swatch" style="background:#78350f;">M</span> MFA Required</div>
+                <div class="legend-item"><span class="legend-swatch" style="background:#0f3330;color:#2dd4bf;font-size:0.65rem;letter-spacing:-0.5px;">PR</span> Phishing-Resistant MFA</div>
+                <div class="legend-item"><span class="legend-swatch" style="background:#78350f;">M</span> Standard MFA</div>
                 <div class="legend-item"><span class="legend-swatch" style="background:#1e3a5f;">C</span> Device Compliance</div>
                 <div class="legend-item"><span class="legend-swatch" style="background:#4a2060;font-size:0.6rem;letter-spacing:-0.5px;">MC</span> MFA + Device Compliance</div>
                 <div class="legend-item"><span class="legend-swatch" style="background:#14532d;">G</span> Grant with Controls</div>
@@ -1014,16 +1019,19 @@ function Export-CAReport {
 
     # Write file
     $resolvedPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
-    $html | Out-File -FilePath $resolvedPath -Encoding utf8 -Force
 
-    Write-Host "[CAReporter] Report saved to: $resolvedPath" -ForegroundColor Green
+    if ($PSCmdlet.ShouldProcess($resolvedPath, 'Write HTML report')) {
+        $html | Out-File -FilePath $resolvedPath -Encoding utf8 -Force
 
-    if ($OpenReport) {
-        Start-Process $resolvedPath
-    }
+        Write-Verbose "[CAReporter] Report saved to: $resolvedPath"
 
-    [PSCustomObject]@{
-        Path     = $resolvedPath
-        FileSize = (Get-Item $resolvedPath).Length
+        if ($OpenReport) {
+            Start-Process $resolvedPath
+        }
+
+        [PSCustomObject]@{
+            Path     = $resolvedPath
+            FileSize = (Get-Item $resolvedPath).Length
+        }
     }
 }

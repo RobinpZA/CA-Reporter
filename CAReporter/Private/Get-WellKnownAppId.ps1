@@ -22,7 +22,6 @@ function Get-WellKnownAppId {
         '00000007-0000-0ff1-ce00-000000000000' = 'Microsoft Power BI'
         'cc15fd57-2c6c-4117-a88c-83b1d56b4bbe' = 'Microsoft Teams'
         '5e3ce6c0-2b1f-4285-8d4b-75ee78787346' = 'Microsoft Teams Web Client'
-        'a]e243-b045-43d0-993f-26d1a7e7e8c0' = 'Microsoft Dynamics 365'
         '00000015-0000-0000-c000-000000000000' = 'Microsoft Dynamics CRM'
         'fc780465-2017-40d4-a0c5-307022471b92' = 'Microsoft Exchange REST API'
         '00b41c95-dab0-4487-9791-b9d2c32c80f2' = 'Office 365 Management APIs'

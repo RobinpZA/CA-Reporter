@@ -38,8 +38,8 @@ function Connect-CAReporter {
     if ($ClientId)              { $connectParams['ClientId']              = $ClientId }
     if ($CertificateThumbprint) { $connectParams['CertificateThumbprint'] = $CertificateThumbprint }
 
-    Write-Host '[CAReporter] Connecting to Microsoft Graph...' -ForegroundColor Cyan
-    Connect-MgGraph @connectParams
+    Write-Verbose '[CAReporter] Connecting to Microsoft Graph...'
+    Connect-MgGraph @connectParams -ErrorAction Stop
 
     # Verify connection
     $ctx = Get-MgContext
@@ -47,8 +47,8 @@ function Connect-CAReporter {
         throw 'Failed to connect to Microsoft Graph. Please check your credentials and try again.'
     }
 
-    Write-Host "[CAReporter] Connected to tenant: $($ctx.TenantId)" -ForegroundColor Green
-    Write-Host "[CAReporter] Account: $($ctx.Account)" -ForegroundColor Green
-    Write-Host "[CAReporter] Scopes: $($ctx.Scopes -join ', ')" -ForegroundColor DarkGray
+    Write-Verbose "[CAReporter] Connected to tenant: $($ctx.TenantId)"
+    Write-Verbose "[CAReporter] Account: $($ctx.Account)"
+    Write-Verbose "[CAReporter] Scopes: $($ctx.Scopes -join ', ')"
     $ctx
 }

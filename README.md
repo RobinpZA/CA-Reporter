@@ -5,17 +5,12 @@ A PowerShell module that tests **all Conditional Access policies** against **all
 ## Features
 
 - **Full Tenant Analysis** - Evaluate every user against every CA policy using the Graph beta What-If endpoint
-- **Graphical Interface** - Built-in WPF GUI (`Show-CAReporterGUI`) for easy point-and-click configuration
+- **Comprehensive MFA Gap Analysis** - Run a full scenario matrix (app × client type × platform) with `-Comprehensive` to find users who lack MFA protection under _any_ sign-in condition; tracks **phishing-resistant MFA** and **device compliance** requirements independently and surfaces them as distinct heatmap cells
+- **Graphical Interface** - Built-in WPF GUI (`Show-CAReporterGUI`) for easy point-and-click configuration, including comprehensive mode controls
 - **Friendly Application Names** - Tab-completable application names (e.g., `Office365`, `AzurePortal`, `MicrosoftTeams`) instead of raw GUIDs
-- **Interactive HTML Report** with:
-  - Executive summary with key metrics (MFA coverage %, blocked users, coverage gaps)
-  - Full scenario parameters display (applications, client app, platform, risk levels, country, IP)
-  - Policy inventory table with state/scope/controls breakdown
-  - User-Policy impact matrix (colour-coded heatmap)
-  - **Effective Outcome per User** - Shows combined grant requirements across all enforced policies, with Block always taking precedence
-  - Detailed per-user findings with filtering and search
-  - Coverage gap identification (users with no policies applied)
-  - Error tracking and reporting
+- **Interactive HTML Reports** — two report types:
+  - **Standard report** — executive summary, policy inventory, user-policy heatmap, effective outcomes, detailed findings, and coverage gaps
+  - **Gap analysis report** — alert banner, summary cards, scenario legend, coverage heatmap (users × scenarios), and gap details table sorted by exposure
 - **Enforced-Only Metrics** - Summary cards and effective outcomes only count enabled policies; report-only policies are shown separately for visibility
 - **Flexible Scenario Testing** - Customise client app type, device platform, risk levels, country, and IP address
 - **Throttling Protection** - Configurable delays and automatic back-off on Graph API throttling
@@ -61,11 +56,14 @@ Import-Module .\CAReporter\CAReporter.psd1
 # Import the module
 Import-Module .\CAReporter\CAReporter.psd1
 
-# Option 1: Launch the GUI (easiest)
+# Option 1: Launch the GUI (easiest — includes comprehensive mode)
 Show-CAReporterGUI
 
-# Option 2: Run a full report from the command line (will prompt for Graph sign-in)
+# Option 2: Run a standard report from the command line
 Get-CAWhatIfReport -OpenReport
+
+# Option 3: Run a comprehensive MFA gap analysis (recommended for gap identification)
+Get-CAWhatIfReport -Comprehensive -OpenReport
 
 # Test first 20 users only (faster for initial testing)
 Get-CAWhatIfReport -MaxUsers 20 -OpenReport
@@ -114,6 +112,40 @@ Get-CAWhatIfReport -IncludeReportOnly `
     -OpenReport
 ```
 
+### Comprehensive MFA Gap Analysis
+
+The `-Comprehensive` switch tests every user against a matrix of sign-in scenarios (app × client type × platform) to find MFA coverage gaps that a single fixed scenario would miss.
+
+```powershell
+# Standard profile: 18 scenarios (2 apps × 2 client types × 4 platforms + 2 legacy auth)
+Get-CAWhatIfReport -Comprehensive -OpenReport
+
+# Thorough profile: 42 scenarios — most complete coverage check
+Get-CAWhatIfReport -Comprehensive -ScenarioProfile Thorough -MaxUsers 100 -OpenReport
+
+# Quick profile: 1 scenario — fast sanity check (Office 365 / browser / any platform)
+Get-CAWhatIfReport -Comprehensive -ScenarioProfile Quick -OpenReport
+
+# Test whether policies enforce location rules — doubles the scenario count per country
+Get-CAWhatIfReport -Comprehensive -ScenarioProfile Standard `
+    -ComprehensiveCountries @('CN', 'RU', 'NG') -OpenReport
+
+# Test named-location coverage with specific IP addresses
+Get-CAWhatIfReport -Comprehensive -ScenarioProfile Standard `
+    -ComprehensiveIpAddresses @('203.0.113.42') -OpenReport
+```
+
+**Scenario profiles:**
+
+| Profile | Scenarios | Apps | Client Types | Platforms |
+|---|---|---|---|---|
+| `Quick` | 1 | Office 365 | Browser | Any |
+| `Standard` (default) | 18 | Office 365, Azure Portal | Browser, Mobile/Desktop, **EAS (Legacy)** | Windows, iOS, Android, macOS |
+| `Thorough` | 42 | Office 365, Azure Portal, Microsoft Graph | Browser, Mobile/Desktop, **EAS + Other (Legacy)** | Windows, iOS, Android, macOS, Linux, Any |
+
+> [!TIP]
+> Use `ScenarioProfile Thorough` for compliance reviews or initial assessments. Use `Quick` or `Standard` for regular scheduled checks.
+
 ### Test from a Specific Location
 
 ```powershell
@@ -121,6 +153,26 @@ Get-CAWhatIfReport -MaxUsers 100 `
     -Country 'FR' `
     -IpAddress '92.205.185.202' `
     -OpenReport
+```
+
+### Generate a Gap Report Directly
+
+```powershell
+# Run scenarios manually and generate the gap report
+Connect-CAReporter
+$policies  = Get-CAPolicy
+$users     = Get-CATenantUsers -MaxUsers 50 -ExcludeDisabled
+$scenarios = Get-ComprehensiveScenarios -Profile Standard  # internal helper
+
+$scenarioResults = foreach ($s in $scenarios) {
+    $p = @{ Users = $users; Applications = @($s.Application)
+            ClientAppType = $s.ClientAppType; ScenarioLabel = $s.Label
+            IncludeAllPolicies = $true }
+    if ($s.DevicePlatform) { $p['DevicePlatform'] = $s.DevicePlatform }
+    Invoke-CAWhatIfAnalysis @p
+}
+
+Export-CAGapReport -ScenarioResults $scenarioResults -Scenarios $scenarios -Policies $policies -OpenReport
 ```
 
 ### Step-by-Step (Advanced)
@@ -166,13 +218,29 @@ The GUI provides a point-and-click interface with:
 
 | Cmdlet | Description |
 |---|---|
-| `Show-CAReporterGUI` | **Launches the graphical interface** for easy configuration |
-| `Get-CAWhatIfReport` | One-command orchestrator (recommended CLI entry point) |
+| `Show-CAReporterGUI` | **Launches the graphical interface** for easy configuration (includes comprehensive mode) |
+| `Get-CAWhatIfReport` | One-command orchestrator — standard or comprehensive mode |
 | `Connect-CAReporter` | Connects to Microsoft Graph with required scopes |
 | `Get-CAPolicy` | Retrieves all Conditional Access policies |
 | `Get-CATenantUsers` | Retrieves tenant users with filtering options |
-| `Invoke-CAWhatIfAnalysis` | Runs What-If evaluations (core engine) |
-| `Export-CAReport` | Generates the HTML report from analysis results |
+| `Invoke-CAWhatIfAnalysis` | Runs What-If evaluations (core engine); accepts `-ScenarioLabel` for tagging |
+| `Export-CAReport` | Generates the standard interactive HTML report |
+| `Export-CAGapReport` | Generates the MFA gap analysis HTML report from multi-scenario results |
+
+### `Get-CAWhatIfReport` key parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `-Comprehensive` | Switch | — | Enables comprehensive scenario matrix mode |
+| `-ScenarioProfile` | String | `Standard` | `Quick` / `Standard` / `Thorough` — controls scenario count |
+| `-ComprehensiveCountries` | String[] | — | ISO 3166-1 alpha-2 codes (e.g. `CN`, `RU`). Each country generates a full copy of the base scenario set, testing whether policies enforce location-based controls. |
+| `-ComprehensiveIpAddresses` | String[] | — | IP addresses or CIDR ranges. Each entry generates a full copy of the base scenario set, testing named location policy coverage. |
+| `-MaxUsers` | Int | 0 (all) | Limit number of users evaluated |
+| `-Applications` | String[] | `Office365` | App friendly names or GUIDs to test |
+| `-ClientAppType` | String | `browser` | Client type for single-scenario mode |
+| `-DevicePlatform` | String | — | Platform for single-scenario mode |
+| `-OpenReport` | Switch | — | Open the HTML report when complete |
+| `-DisconnectWhenDone` | Switch | — | Disconnect from Graph after completion |
 
 ## Supported Applications
 
@@ -202,7 +270,11 @@ Use the friendly name with `-Applications` (tab-completable) or the raw GUID:
 
 ## Report Sections
 
-### Scenario Parameters
+CAReporter generates two distinct report types depending on the mode used.
+
+### Standard Report (`Export-CAReport`)
+
+#### Scenario Parameters
 Displays all selected parameters at the top of the report: applications tested (resolved to friendly names), client app type, device platform, risk levels, country, IP address, and user count.
 
 ### Executive Summary
@@ -235,21 +307,55 @@ Every evaluation result in a searchable, filterable table. Filter by status (Blo
 ### Coverage Gaps
 Users who have **no enforced CA policies applied** — these are potential security gaps.
 
+---
+
+### Gap Analysis Report (`Export-CAGapReport`)
+
+Generated when using `-Comprehensive`. Aggregates results across all tested scenarios to give a cross-condition view of MFA coverage.
+
+#### Alert Banner
+A prominent banner at the top flags whether any gaps were found, or confirms all users are fully covered.
+
+#### Summary Cards
+At-a-glance metrics: users evaluated, scenarios tested, % fully covered, users with gaps, users with no policy in any scenario, and enabled policy count.
+
+#### Scenario Legend
+Maps each scenario ID (S1, S2, ...) to its application, client app type, and device platform so heatmap cells can be interpreted.
+
+#### Coverage Heatmap
+A users × scenarios matrix showing the effective status per cell:
+- **PC** (Teal, bold border) = Phishing-Resistant MFA + Device Compliance Required
+- **P** (Teal) = Phishing-Resistant MFA Required
+- **MC** (Green, bold border) = Standard MFA + Device Compliance Required
+- **M** (Green) = Standard MFA Required
+- **B** (Blue) = Blocked
+- **!** (Orange) = Grant with no MFA — potential gap
+- **X** (Red) = No policy applied — unprotected
+- **E** (Purple) = Evaluation error
+
+Filterable by user name and by coverage status (all / gaps only / fully covered).
+
+#### Gap Details Table
+Lists only users who have at least one gap, sorted by gap count descending. Shows the specific scenario IDs where protection is missing.
+
 ## How It Works
 
 1. **User Enumeration** - Retrieves user accounts from Microsoft Graph with pagination
 2. **Policy Retrieval** - Fetches all Conditional Access policies via the v1.0 endpoint
-3. **What-If Evaluation** - For each user × application combination, calls `POST /beta/identity/conditionalAccess/evaluate` with a simulated sign-in scenario
-4. **Result Processing** - Parses grant controls, session controls, and policy applicability
-5. **Report Generation** - Builds a self-contained HTML file with embedded CSS/JS for filtering and interactivity
+3. **User De-duplication (Comprehensive mode)** - Groups users into CA-equivalent profiles based on their transitive group memberships, role assignments, and guest/member type. Only one representative per unique profile is evaluated; results are fanned out to all equivalent users. This can reduce evaluate API calls significantly in tenants where many users share the same group/role memberships.
+4. **Platform Pruning (Comprehensive mode)** - Inspects the fetched policies before generating scenarios. If no policy references platform conditions, the scenario matrix collapses platform to `Any` only. If some policies reference specific platforms, only those platforms (plus `Any`) are tested, removing scenarios that could never produce a different result.
+5. **What-If Evaluation** - For each representative user × scenario, calls `POST /beta/identity/conditionalAccess/evaluate` with the simulated sign-in context
+6. **Result Processing** - Parses grant controls, session controls, and policy applicability; expands representative results back to all equivalent users
+7. **Report Generation** - Builds a self-contained HTML file with embedded CSS/JS for filtering and interactivity
 
 ## Known Limitations
 
 - The What-If API is in **beta** and may change
-- Large tenants (1000+ users × multiple apps) will take time due to per-user API calls
+- Large tenants (1000+ users × multiple apps) can still take time; in comprehensive mode, user de-duplication and platform pruning reduce the number of evaluate API calls, but the saving depends on how many unique CA profiles exist in the tenant
 - The What-If API does not support all policy conditions (e.g., some device state evaluations)
 - Session controls visibility depends on the API response
 - Named location evaluation requires providing an IP or country in the scenario
+- **PC cell detection** requires phishing-resistant MFA _and_ device compliance to originate from the **same policy**; if they come from separate policies, the cell shows **MC** instead. This is a known limitation of per-policy result parsing.
 
 ## Acknowledgements
 

@@ -34,7 +34,7 @@ function Get-CATenantUsers {
         [switch]$ExcludeDisabled
     )
 
-    Write-Host '[CAReporter] Retrieving tenant users...' -ForegroundColor Cyan
+    Write-Verbose '[CAReporter] Retrieving tenant users...'
 
     $selectFields = 'id,displayName,userPrincipalName,mail,userType,accountEnabled,assignedLicenses'
     $users = @()
@@ -48,8 +48,8 @@ function Get-CATenantUsers {
     elseif ($UserType -eq 'Guest') {
         $filters += "userType eq 'Guest'"
     }
-    elseif (-not $IncludeGuests -and $UserType -eq 'All') {
-        # Default: include both but the switch controls it
+    elseif (-not $IncludeGuests) {
+        $filters += "userType eq 'Member'"
     }
 
     if ($ExcludeDisabled) {
@@ -76,7 +76,7 @@ function Get-CATenantUsers {
         }
 
         if ($users.Count % 1000 -lt $pageSize) {
-            Write-Host "[CAReporter]   Retrieved $($users.Count) users so far..." -ForegroundColor DarkGray
+            Write-Verbose "[CAReporter]   Retrieved $($users.Count) users so far..."
         }
     } while ($uri)
 
@@ -84,7 +84,7 @@ function Get-CATenantUsers {
     $members = @($users | Where-Object { $_.userType -eq 'Member' -or -not $_.userType })
     $guests  = @($users | Where-Object { $_.userType -eq 'Guest' })
 
-    Write-Host "[CAReporter] Retrieved $($users.Count) users (Members: $($members.Count), Guests: $($guests.Count))" -ForegroundColor Green
+    Write-Verbose "[CAReporter] Retrieved $($users.Count) users (Members: $($members.Count), Guests: $($guests.Count))"
 
     $users
 }

@@ -69,6 +69,14 @@ function Get-CAWhatIfReport {
         Get-CAWhatIfReport -MaxUsers 100 -ExcludeDisabledUsers -ClientAppType 'mobileAppsAndDesktopClients' -DevicePlatform 'iOS'
 
         Tests 100 enabled users signing in from iOS mobile app.
+    .EXAMPLE
+        Get-CAWhatIfReport -Comprehensive -ScenarioProfile Thorough -MaxUsers 50 -OpenReport
+
+        Runs comprehensive MFA gap analysis across 42 sign-in scenarios for 50 users.
+    .EXAMPLE
+        Get-CAWhatIfReport -Comprehensive -ScenarioProfile Standard -ComprehensiveCountries @('CN','RU') -OpenReport
+
+        Standard scenarios plus country variants for China and Russia to test location-based policies.
     #>
     [CmdletBinding()]
     param(
@@ -104,18 +112,19 @@ function Get-CAWhatIfReport {
 
         [switch]$SkipConnection,
 
-        [switch]$DisconnectWhenDone
+        [switch]$DisconnectWhenDone,
+
+        [switch]$Comprehensive,
+
+        [ValidateSet('Quick', 'Standard', 'Thorough')]
+        [string]$ScenarioProfile = 'Standard',
+
+        [string[]]$ComprehensiveCountries,
+
+        [string[]]$ComprehensiveIpAddresses
     )
 
     $totalStart = Get-Date
-
-    # Resolve friendly application names to GUIDs
-    $appMap = (Get-WellKnownAppId)
-    $nameToGuid = @{}
-    foreach ($kv in $script:AppCompletions.GetEnumerator()) { $nameToGuid[$kv.Key] = $kv.Value }
-    $Applications = @($Applications | ForEach-Object {
-        if ($nameToGuid.ContainsKey($_)) { $nameToGuid[$_] } else { $_ }
-    })
 
     Write-Host '================================================================' -ForegroundColor Cyan
     Write-Host '  CA Reporter - Conditional Access What-If Analysis' -ForegroundColor Cyan
@@ -164,58 +173,166 @@ function Get-CAWhatIfReport {
         return
     }
 
-    # --- Step 4: What-If Analysis ---
+    # --- Step 3b: Build user CA fingerprints for deduplication ---
+    # Groups users that share identical CA-relevant group/role memberships so we
+    # only submit one evaluate API call per unique profile, then fan out results.
     Write-Host '' -ForegroundColor Cyan
-    Write-Host '[Step 4/5] Running What-If evaluations...' -ForegroundColor Yellow
-    $analysisParams = @{
-        Users           = $users
-        Applications    = $Applications
-        Policies        = $policies
-        ClientAppType   = $ClientAppType
-        SignInRiskLevel = $SignInRiskLevel
-        UserRiskLevel   = $UserRiskLevel
-        ThrottleDelayMs = $ThrottleDelayMs
-        IncludeAllPolicies = $true
+    Write-Host '[Step 3b/5] Building user CA profiles for deduplication...' -ForegroundColor Yellow
+    $fingerprintData = Get-UserCaFingerprints -Policies $policies -Users $users
+    if ($fingerprintData.UniqueCount -lt $fingerprintData.TotalUsers) {
+        $saved = $fingerprintData.TotalUsers - $fingerprintData.UniqueCount
+        Write-Host "  Deduplication: $($fingerprintData.TotalUsers) users → $($fingerprintData.UniqueCount) unique CA profiles (saves ~$saved evaluate calls per scenario)" -ForegroundColor Green
     }
-    if ($DevicePlatform) { $analysisParams['DevicePlatform'] = $DevicePlatform }
-    if ($Country)        { $analysisParams['Country']        = $Country }
-    if ($IpAddress)      { $analysisParams['IpAddress']      = $IpAddress }
-
-    $analysis = Invoke-CAWhatIfAnalysis @analysisParams
-
-    # --- Step 5: Generate Report ---
-    Write-Host '' -ForegroundColor Cyan
-    Write-Host '[Step 5/5] Generating HTML report...' -ForegroundColor Yellow
-    $reportParams = @{
-        AnalysisResults = $analysis
-        Policies        = $policies
-    }
-    if ($OutputPath)  { $reportParams['OutputPath'] = $OutputPath }
-    if ($OpenReport)  { $reportParams['OpenReport']  = $true }
-
-    $report = Export-CAReport @reportParams
-
-    # --- Done ---
-    $totalElapsed = (Get-Date) - $totalStart
-    Write-Host '' -ForegroundColor Cyan
-    Write-Host '================================================================' -ForegroundColor Green
-    Write-Host '  Report Complete!' -ForegroundColor Green
-    Write-Host "  Total time: $($totalElapsed.ToString('mm\:ss'))" -ForegroundColor Green
-    Write-Host "  Report: $($report.Path)" -ForegroundColor Green
-    Write-Host "  Size: $([math]::Round($report.FileSize / 1KB, 1)) KB" -ForegroundColor Green
-    Write-Host '================================================================' -ForegroundColor Green
-
-    if ($DisconnectWhenDone) {
-        Write-Host '[CAReporter] Disconnecting from Microsoft Graph...' -ForegroundColor Yellow
-        Disconnect-MgGraph | Out-Null
-        Write-Host '[CAReporter] Disconnected.' -ForegroundColor Green
+    else {
+        Write-Host "  Deduplication: all $($fingerprintData.TotalUsers) users have distinct CA profiles (no savings)" -ForegroundColor DarkGray
     }
 
-    [PSCustomObject]@{
-        Report        = $report
-        Analysis      = $analysis
-        Policies      = $policies
-        Users         = $users
-        Duration      = $totalElapsed
+    # --- Branch: Comprehensive vs. Single Scenario ---
+    if ($Comprehensive) {
+        # Build scenario matrix — pass policies for platform pruning
+        $scenarioParams = @{ Profile = $ScenarioProfile; Policies = $policies }
+        if ($PSBoundParameters.ContainsKey('Applications') -and $Applications -ne @('Office365')) {
+            $scenarioParams['Applications'] = $Applications
+        }
+        if ($ComprehensiveCountries)   { $scenarioParams['Countries']    = $ComprehensiveCountries }
+        if ($ComprehensiveIpAddresses) { $scenarioParams['IpAddresses']  = $ComprehensiveIpAddresses }
+        $scenarios = Get-ComprehensiveScenarios @scenarioParams
+        $totalSteps = $scenarios.Count + 1  # +1 for report generation
+
+        Write-Host ''
+        Write-Host "[Step 4/$($scenarios.Count + 4)] Running comprehensive What-If analysis ($($scenarios.Count) scenarios)..." -ForegroundColor Yellow
+        $evalCalls  = $fingerprintData.UniqueCount * $scenarios.Count
+        $totalCalls = $fingerprintData.TotalUsers * $scenarios.Count
+        Write-Host "  Profile: $ScenarioProfile | Users: $($users.Count) | Unique profiles: $($fingerprintData.UniqueCount) | Scenarios: $($scenarios.Count)" -ForegroundColor DarkGray
+        Write-Host "  Evaluate API calls: $evalCalls (vs $totalCalls without deduplication)" -ForegroundColor DarkGray
+        Write-Host ''
+
+        $scenarioResults = [System.Collections.Generic.List[object]]::new()
+        $scenarioIndex = 0
+
+        foreach ($scenario in $scenarios) {
+            $scenarioIndex++
+            Write-Host "  [$scenarioIndex/$($scenarios.Count)] $($scenario.Label)" -ForegroundColor Cyan
+
+            $analysisParams = @{
+                Users              = $users
+                Applications       = @($scenario.Application)
+                Policies           = $policies
+                ClientAppType      = $scenario.ClientAppType
+                SignInRiskLevel    = 'none'
+                UserRiskLevel      = 'none'
+                ThrottleDelayMs    = $ThrottleDelayMs
+                IncludeAllPolicies = $true
+                ScenarioLabel      = $scenario.Label
+            }
+            if ($scenario.DevicePlatform) { $analysisParams['DevicePlatform'] = $scenario.DevicePlatform }
+            # Scenario-level location takes precedence; fall back to top-level Country/IpAddress
+            $effectiveCountry = if ($scenario.Country)   { $scenario.Country }   else { $Country }
+            $effectiveIp      = if ($scenario.IpAddress) { $scenario.IpAddress } else { $IpAddress }
+            if ($effectiveCountry) { $analysisParams['Country']   = $effectiveCountry }
+            if ($effectiveIp)      { $analysisParams['IpAddress'] = $effectiveIp }
+
+            # Stamp resolved location back onto scenario so the gap report legend can display it
+            $scenario['EffectiveCountry']   = $effectiveCountry
+            $scenario['EffectiveIpAddress'] = $effectiveIp
+
+            $result = Invoke-CAWhatIfAnalysis @analysisParams -FingerprintData $fingerprintData
+            $scenarioResults.Add($result)
+        }
+
+        # Generate gap report
+        Write-Host '' -ForegroundColor Cyan
+        Write-Host "[Step $($scenarios.Count + 4)/$($scenarios.Count + 4)] Generating gap analysis report..." -ForegroundColor Yellow
+        $reportParams = @{
+            ScenarioResults = $scenarioResults.ToArray()
+            Scenarios       = $scenarios
+            Policies        = $policies
+        }
+        if ($OutputPath)  { $reportParams['OutputPath'] = $OutputPath }
+        if ($OpenReport)  { $reportParams['OpenReport']  = $true }
+
+        $report = Export-CAGapReport @reportParams
+
+        # --- Done ---
+        $totalElapsed = (Get-Date) - $totalStart
+        Write-Host '' -ForegroundColor Cyan
+        Write-Host '================================================================' -ForegroundColor Green
+        Write-Host '  Gap Analysis Complete!' -ForegroundColor Green
+        Write-Host "  Total time: $($totalElapsed.ToString('mm\:ss'))" -ForegroundColor Green
+        Write-Host "  Report: $($report.Path)" -ForegroundColor Green
+        Write-Host "  Size: $([math]::Round($report.FileSize / 1KB, 1)) KB" -ForegroundColor Green
+        Write-Host "  Coverage: $($report.CoveragePct)% fully covered, $($report.GapUsers) user(s) with gaps" -ForegroundColor Green
+        Write-Host '================================================================' -ForegroundColor Green
+
+        if ($DisconnectWhenDone) {
+            Write-Host '[CAReporter] Disconnecting from Microsoft Graph...' -ForegroundColor Yellow
+            Disconnect-MgGraph | Out-Null
+            Write-Host '[CAReporter] Disconnected.' -ForegroundColor Green
+        }
+
+        [PSCustomObject]@{
+            Report          = $report
+            ScenarioResults = $scenarioResults.ToArray()
+            Scenarios       = $scenarios
+            Policies        = $policies
+            Users           = $users
+            Duration        = $totalElapsed
+        }
+    }
+    else {
+        # --- Step 4: What-If Analysis (single scenario) ---
+        Write-Host '' -ForegroundColor Cyan
+        Write-Host '[Step 4/5] Running What-If evaluations...' -ForegroundColor Yellow
+        $analysisParams = @{
+            Users           = $users
+            Applications    = $Applications
+            Policies        = $policies
+            ClientAppType   = $ClientAppType
+            SignInRiskLevel = $SignInRiskLevel
+            UserRiskLevel   = $UserRiskLevel
+            ThrottleDelayMs = $ThrottleDelayMs
+            IncludeAllPolicies = $true
+        }
+        if ($DevicePlatform) { $analysisParams['DevicePlatform'] = $DevicePlatform }
+        if ($Country)        { $analysisParams['Country']        = $Country }
+        if ($IpAddress)      { $analysisParams['IpAddress']      = $IpAddress }
+
+        $analysis = Invoke-CAWhatIfAnalysis @analysisParams -FingerprintData $fingerprintData
+
+        # --- Step 5: Generate Report ---
+        Write-Host '' -ForegroundColor Cyan
+        Write-Host '[Step 5/5] Generating HTML report...' -ForegroundColor Yellow
+        $reportParams = @{
+            AnalysisResults = $analysis
+            Policies        = $policies
+        }
+        if ($OutputPath)  { $reportParams['OutputPath'] = $OutputPath }
+        if ($OpenReport)  { $reportParams['OpenReport']  = $true }
+
+        $report = Export-CAReport @reportParams
+
+        # --- Done ---
+        $totalElapsed = (Get-Date) - $totalStart
+        Write-Host '' -ForegroundColor Cyan
+        Write-Host '================================================================' -ForegroundColor Green
+        Write-Host '  Report Complete!' -ForegroundColor Green
+        Write-Host "  Total time: $($totalElapsed.ToString('mm\:ss'))" -ForegroundColor Green
+        Write-Host "  Report: $($report.Path)" -ForegroundColor Green
+        Write-Host "  Size: $([math]::Round($report.FileSize / 1KB, 1)) KB" -ForegroundColor Green
+        Write-Host '================================================================' -ForegroundColor Green
+
+        if ($DisconnectWhenDone) {
+            Write-Host '[CAReporter] Disconnecting from Microsoft Graph...' -ForegroundColor Yellow
+            Disconnect-MgGraph | Out-Null
+            Write-Host '[CAReporter] Disconnected.' -ForegroundColor Green
+        }
+
+        [PSCustomObject]@{
+            Report        = $report
+            Analysis      = $analysis
+            Policies      = $policies
+            Users         = $users
+            Duration      = $totalElapsed
+        }
     }
 }

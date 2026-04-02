@@ -163,6 +163,22 @@ function Show-CAReporterGUI {
                     <CheckBox Name="chkDisabled" Content="Include Disabled"/>
                 </WrapPanel>
 
+                <!-- Comprehensive Mode -->
+                <TextBlock Style="{StaticResource SectionHeader}" Text="Comprehensive Gap Analysis"/>
+                <CheckBox Name="chkComprehensive" Content="Run comprehensive MFA gap analysis" Margin="0,4,0,4"/>
+                <StackPanel Name="pnlScenarioProfile" Margin="20,0,0,0">
+                    <Label Content="Scenario Profile"/>
+                    <ComboBox Name="cmbScenarioProfile">
+                        <ComboBoxItem Content="Quick" ToolTip="1 scenario — fast check"/>
+                        <ComboBoxItem Content="Standard" IsSelected="True" ToolTip="18 scenarios — recommended"/>
+                        <ComboBoxItem Content="Thorough" ToolTip="42 scenarios — most complete"/>
+                    </ComboBox>
+                    <Label Content="Additional Countries (comma-separated, e.g. CN, RU, NG)"/>
+                    <TextBox Name="txtCompCountries" ToolTip="Each country code adds a full copy of the base scenarios to test location-based policies"/>
+                    <Label Content="Additional IP Addresses (comma-separated)"/>
+                    <TextBox Name="txtCompIpAddresses" ToolTip="Each IP adds a full copy of the base scenarios to test named-location policies"/>
+                </StackPanel>
+
                 <!-- Output -->
                 <TextBlock Style="{StaticResource SectionHeader}" Text="Output"/>
                 <CheckBox Name="chkOpenReport" Content="Open report in browser when complete" IsChecked="True"/>
@@ -203,6 +219,11 @@ function Show-CAReporterGUI {
     $chkExcludeDisabled = $window.FindName('chkExcludeDisabled')
     $chkReportOnly     = $window.FindName('chkReportOnly')
     $chkDisabled       = $window.FindName('chkDisabled')
+    $chkComprehensive  = $window.FindName('chkComprehensive')
+    $pnlScenarioProfile = $window.FindName('pnlScenarioProfile')
+    $cmbScenarioProfile = $window.FindName('cmbScenarioProfile')
+    $txtCompCountries    = $window.FindName('txtCompCountries')
+    $txtCompIpAddresses  = $window.FindName('txtCompIpAddresses')
     $chkOpenReport     = $window.FindName('chkOpenReport')
     $chkDisconnect     = $window.FindName('chkDisconnect')
     $txtOutputPath     = $window.FindName('txtOutputPath')
@@ -267,6 +288,20 @@ function Show-CAReporterGUI {
         if ($chkDisabled.IsChecked)        { $params['IncludeDisabled']      = $true }
         if ($chkOpenReport.IsChecked)      { $params['OpenReport']           = $true }
         if ($chkDisconnect.IsChecked)      { $params['DisconnectWhenDone']   = $true }
+
+        if ($chkComprehensive.IsChecked) {
+            $params['Comprehensive']   = $true
+            $params['ScenarioProfile'] = $cmbScenarioProfile.SelectedItem.Content.ToString()
+
+            $compCountries = $txtCompCountries.Text.Trim()
+            if ($compCountries) {
+                $params['ComprehensiveCountries'] = @($compCountries -split '\s*,\s*' | Where-Object { $_ })
+            }
+            $compIps = $txtCompIpAddresses.Text.Trim()
+            if ($compIps) {
+                $params['ComprehensiveIpAddresses'] = @($compIps -split '\s*,\s*' | Where-Object { $_ })
+            }
+        }
 
         $outPath = $txtOutputPath.Text.Trim()
         if ($outPath) { $params['OutputPath'] = $outPath }

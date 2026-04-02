@@ -20,7 +20,7 @@ function Get-CAPolicy {
         [switch]$IncludeReportOnly
     )
 
-    Write-Host '[CAReporter] Retrieving Conditional Access policies...' -ForegroundColor Cyan
+    Write-Verbose '[CAReporter] Retrieving Conditional Access policies...'
 
     $allPolicies = @()
     $uri = 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'
@@ -31,7 +31,7 @@ function Get-CAPolicy {
         $uri = $response.'@odata.nextLink'
     } while ($uri)
 
-    Write-Host "[CAReporter] Found $($allPolicies.Count) total CA policies" -ForegroundColor Green
+    Write-Verbose "[CAReporter] Found $($allPolicies.Count) total CA policies"
 
     # Filter based on state
     $filtered = $allPolicies | Where-Object {
@@ -43,8 +43,8 @@ function Get-CAPolicy {
     }
 
     $stateBreakdown = $allPolicies | Group-Object -Property state | ForEach-Object { "$($_.Name): $($_.Count)" }
-    Write-Host "[CAReporter] Policy states: $($stateBreakdown -join ', ')" -ForegroundColor DarkGray
-    Write-Host "[CAReporter] Returning $($filtered.Count) policies after filtering" -ForegroundColor Green
+    Write-Verbose "[CAReporter] Policy states: $($stateBreakdown -join ', ')"
+    Write-Verbose "[CAReporter] Returning $($filtered.Count) policies after filtering"
 
     $filtered | Sort-Object displayName
 }

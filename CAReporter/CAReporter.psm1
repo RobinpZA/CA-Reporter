@@ -18,6 +18,9 @@ foreach ($file in @($Private + $Public)) {
 # Export public functions
 Export-ModuleMember -Function $Public.BaseName
 
+# Cache well-known app IDs at module scope for performance
+$script:WellKnownAppIds = Get-WellKnownAppId
+
 # --- Tab-completion for -Applications parameter ---
 # Maps friendly alias names to well-known application GUIDs so users can
 # press Tab and pick from a readable list instead of memorising GUIDs.
@@ -41,7 +44,6 @@ $script:AppCompletions = [ordered]@{
     'ExchangeRESTAPI'        = 'fc780465-2017-40d4-a0c5-307022471b92'
     'Office365ManagementAPI' = '00b41c95-dab0-4487-9791-b9d2c32c80f2'
     'DefenderCloudApps'      = '09abbdfd-ed23-44ee-a2d9-a627aa1c90f3'
-    'Microsoft Graph'        = '00000003-0000-0000-c000-000000000000'
 }
 
 $appCompleter = {
@@ -58,3 +60,12 @@ $appCompleter = {
 
 Register-ArgumentCompleter -CommandName Get-CAWhatIfReport      -ParameterName Applications -ScriptBlock $appCompleter
 Register-ArgumentCompleter -CommandName Invoke-CAWhatIfAnalysis  -ParameterName Applications -ScriptBlock $appCompleter
+
+# --- Tab-completion for -ScenarioProfile parameter ---
+$scenarioProfileCompleter = {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    @('Quick', 'Standard', 'Thorough') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+}
+Register-ArgumentCompleter -CommandName Get-CAWhatIfReport -ParameterName ScenarioProfile -ScriptBlock $scenarioProfileCompleter
