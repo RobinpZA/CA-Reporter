@@ -1,4 +1,4 @@
-function Invoke-CAWhatIfAnalysis {
+﻿function Invoke-CAWhatIfAnalysis {
     <#
     .SYNOPSIS
         Runs Conditional Access What-If evaluations for users against applications.
@@ -118,7 +118,7 @@ function Invoke-CAWhatIfAnalysis {
     $results = [System.Collections.Generic.List[object]]::new()
     $appNameCache = @{}
     $counter = 0
-    $errors = @()
+    $evalErrors = @()
     $startTime = Get-Date
 
     Write-Verbose "[CAReporter] Starting What-If analysis: $($usersToEvaluate.Count) users x $($Applications.Count) apps = $totalTests evaluations"
@@ -242,7 +242,7 @@ function Invoke-CAWhatIfAnalysis {
             catch {
                 $errMsg = $_.Exception.Message
                 Write-Warning "[CAReporter] Error evaluating user $($user.userPrincipalName) for app $appName : $errMsg"
-                $errors += @{
+                $evalErrors += @{
                     User    = $user.userPrincipalName
                     App     = $appName
                     Error   = $errMsg
@@ -330,20 +330,20 @@ function Invoke-CAWhatIfAnalysis {
 
     $elapsed = (Get-Date) - $startTime
     Write-Verbose "[CAReporter] Analysis complete: $($results.Count) results in $($elapsed.ToString('mm\:ss'))"
-    if ($errors.Count -gt 0) {
-        Write-Verbose "[CAReporter] Encountered $($errors.Count) errors during evaluation"
+    if ($evalErrors.Count -gt 0) {
+        Write-Verbose "[CAReporter] Encountered $($evalErrors.Count) errors during evaluation"
     }
 
     [PSCustomObject]@{
         Results      = $results.ToArray()
-        Errors       = $errors
+        Errors       = $evalErrors
         Summary      = @{
             TotalUsers         = $actualUserCount
             UniqueProfiles     = if ($FingerprintData) { $FingerprintData.UniqueCount } else { $null }
             TotalApps          = $Applications.Count
             TotalEvaluations   = $totalTests
             TotalResults       = $results.Count
-            TotalErrors        = $errors.Count
+            TotalErrors        = $evalErrors.Count
             Duration           = $elapsed
             Timestamp          = (Get-Date).ToString('o')
             Applications       = $Applications

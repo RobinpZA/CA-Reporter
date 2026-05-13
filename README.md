@@ -6,7 +6,7 @@ A PowerShell module that tests **all Conditional Access policies** against **all
 
 - **Full Tenant Analysis** - Evaluate every user against every CA policy using the Graph beta What-If endpoint
 - **Comprehensive MFA Gap Analysis** - Run a full scenario matrix (app × client type × platform) with `-Comprehensive` to find users who lack MFA protection under _any_ sign-in condition; tracks **phishing-resistant MFA** and **device compliance** requirements independently and surfaces them as distinct heatmap cells
-- **Graphical Interface** - Built-in WPF GUI (`Show-CAReporterGUI`) for easy point-and-click configuration, including comprehensive mode controls
+- **Graphical Interface** - Built-in browser-based GUI (`Show-CAReporterGUI`) for easy point-and-click configuration, including comprehensive mode controls
 - **Friendly Application Names** - Tab-completable application names (e.g., `Office365`, `AzurePortal`, `MicrosoftTeams`) instead of raw GUIDs
 - **Interactive HTML Reports** — two report types:
   - **Standard report** — executive summary, policy inventory, user-policy heatmap, effective outcomes, detailed findings, and coverage gaps
@@ -67,6 +67,9 @@ Get-CAWhatIfReport -Comprehensive -OpenReport
 
 # Test first 20 users only (faster for initial testing)
 Get-CAWhatIfReport -MaxUsers 20 -OpenReport
+
+# Suppress all progress output (useful in automation/scripts)
+Get-CAWhatIfReport -OpenReport -InformationAction SilentlyContinue
 ```
 
 ## Usage Examples
@@ -241,6 +244,8 @@ The GUI provides a point-and-click interface with:
 | `-DevicePlatform` | String | — | Platform for single-scenario mode |
 | `-OpenReport` | Switch | — | Open the HTML report when complete |
 | `-DisconnectWhenDone` | Switch | — | Disconnect from Graph after completion |
+
+> **Note:** Progress and status messages from `Get-CAWhatIfReport` are written to PowerShell's Information stream (stream 6). They appear by default but can be suppressed in scripts by adding `-InformationAction SilentlyContinue`.
 
 ## Supported Applications
 
