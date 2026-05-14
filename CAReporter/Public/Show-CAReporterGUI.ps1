@@ -151,6 +151,21 @@ body{font-family:var(--ff);background-color:var(--bg);background-image:radial-gr
 /* error */
 .err-icon{font-size:40px;text-align:center;margin-bottom:16px}
 .err-box{background:rgba(255,51,102,.08);border:1px solid rgba(255,51,102,.3);border-radius:8px;padding:16px;font-family:var(--fm);font-size:11px;color:var(--red);word-break:break-all;white-space:pre-wrap;max-height:220px;overflow-y:auto}
+/* app search */
+.app-search{margin-top:14px;padding-top:14px;border-top:1px dashed rgba(255,255,255,.08)}
+.search-row{display:flex;gap:8px}
+.search-drop{background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;overflow:hidden;max-height:220px;overflow-y:auto;margin-top:6px}
+.search-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--bdr);transition:background .12s}
+.search-item:last-child{border-bottom:none}
+.search-item:hover,.search-item:focus{background:var(--bg4);outline:none}
+.search-name{font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-guid{font-family:var(--fm);font-size:10px;color:var(--txt3);flex-shrink:0;margin-left:8px}
+.search-add{color:var(--blue);font-size:11px;font-weight:700;flex-shrink:0;margin-left:8px}
+.search-msg{padding:10px 14px;font-size:12px;color:var(--txt3);font-family:var(--fm);text-align:center}
+.app-item.custom{border-color:rgba(0,229,255,.35);background:rgba(0,229,255,.04)}
+.app-item.custom.sel{border-color:var(--cyan);background:rgba(0,229,255,.09)}
+.app-rm{margin-left:auto;color:var(--txt3);font-size:10px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;border-radius:3px;flex-shrink:0;transition:all .12s}
+.app-rm:hover{color:var(--red);background:rgba(255,51,102,.15)}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px}
 </style>
 </head>
@@ -204,6 +219,15 @@ body{font-family:var(--ff);background-color:var(--bg);background-image:radial-gr
     <div class="cfg-sec">
       <div class="section-lbl">Applications</div>
       <div class="app-grid" id="appGrid"></div>
+      <div class="app-search">
+        <div class="form-label" style="margin-bottom:8px">Search for an unlisted app</div>
+        <div class="search-row">
+          <input class="form-input" id="appSearchInput" placeholder="Type app name or paste a GUID…" style="flex:1"
+                 oninput="scheduleSearch()" onkeydown="if(event.key==='Enter'){doAppSearch()}">
+          <button class="btn-ghost" style="padding:8px 14px;font-size:12px;flex-shrink:0" onclick="doAppSearch()">Search</button>
+        </div>
+        <div id="appSearchDrop"></div>
+      </div>
     </div>
 
     <div class="cfg-sec">
@@ -496,6 +520,62 @@ function showComplete(summary) {
   showView('complete');
 }
 
+var srchTimer = null;
+function scheduleSearch() { if (srchTimer) clearTimeout(srchTimer); srchTimer = setTimeout(doAppSearch, 400); }
+function doAppSearch() {
+  if (srchTimer) { clearTimeout(srchTimer); srchTimer = null; }
+  var q = document.getElementById('appSearchInput').value.trim();
+  var drop = document.getElementById('appSearchDrop');
+  if (!q || q.length < 2) { drop.innerHTML = ''; return; }
+  drop.innerHTML = '<div class="search-drop"><div class="search-msg">Searching…</div></div>';
+  fetch('/api/apps/search?q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var results = d.results || [];
+      if (!results.length) {
+        drop.innerHTML = '<div class="search-drop"><div class="search-msg">No results. Try a different name, or paste a GUID directly.</div></div>';
+        return;
+      }
+      var html = '<div class="search-drop">';
+      results.forEach(function(r) {
+        var eid = esc(r.id); var en = esc(r.name);
+        html += '<div class="search-item" tabindex="0"' +
+          ' onclick="pickApp(\'' + eid + '\',\'' + en + '\')"' +
+          ' onkeydown="if(event.key===\'Enter\'||event.key===\' \')pickApp(\'' + eid + '\',\'' + en + '\')">' +
+          '<span class="search-name">' + escHtml(r.name) + '</span>' +
+          '<span class="search-guid">' + escHtml(r.id) + '</span>' +
+          '<span class="search-add">+ Add</span></div>';
+      });
+      html += '</div>';
+      drop.innerHTML = html;
+    })
+    .catch(function() { drop.innerHTML = '<div class="search-drop"><div class="search-msg">Search unavailable.</div></div>'; });
+}
+function pickApp(id, name) {
+  var existing = document.querySelector('.app-item[data-appid="' + id + '"]');
+  if (existing) { existing.classList.add('sel'); updCount(); }
+  else {
+    var grid = document.getElementById('appGrid');
+    var el = document.createElement('div');
+    el.className = 'app-item custom sel';
+    el.dataset.name  = id;   // GUID sent to backend; resolves via Resolve-AppDisplayName
+    el.dataset.appid = id;   // used for dedup
+    el.title = name + '\n' + id;
+    el.innerHTML = '<div class="app-chk"></div><div class="app-name">' + escHtml(name) + '</div>' +
+                   '<div class="app-rm" title="Remove">&times;</div>';
+    el.addEventListener('click', function(e) {
+      if (e.target.classList.contains('app-rm')) { el.remove(); updCount(); return; }
+      el.classList.toggle('sel'); updCount();
+    });
+    grid.appendChild(el);
+    updCount();
+  }
+  document.getElementById('appSearchInput').value = '';
+  document.getElementById('appSearchDrop').innerHTML = '';
+}
+function esc(s) { return (s + '').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function escHtml(s) { return (s + '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 init();
 </script>
 </body>
@@ -665,7 +745,8 @@ init();
                 } elseif ($result.Users -and $result.Policies) {
                     $summary.users    = @($result.Users).Count
                     $summary.policies = $result.Policies.Count
-                    if ($result.Report.GapUsers -ne $null) { $summary.noPolicies = $result.Report.GapUsers }
+                    if ($null -ne $result.Report.GapUsers)    { $summary.noPolicies = $result.Report.GapUsers }
+                    if ($null -ne $result.Report.CoveragePct) { $summary.mfaPct     = $result.Report.CoveragePct }
                 }
 
                 $state.Results  = $summary
@@ -758,6 +839,27 @@ init();
                         $state.Status  = 'idle'
                         $state.Account = ''
                         Send-Json $reqCtx @{ ok = $true }
+                    }
+
+                    '^/api/apps/search$' {
+                        $q = $req.QueryString['q']
+                        $results = @()
+                        if ($q -and $q.Length -ge 2) {
+                            # Ensure merill data is loaded (first call fetches from network)
+                            if ($null -eq $script:MerillAppSearchIndex) {
+                                Get-MerillAppInfo | Out-Null
+                            }
+                            if ($script:MerillAppSearchIndex) {
+                                $lq = $q.ToLower()
+                                $results = @(
+                                    $script:MerillAppSearchIndex |
+                                    Where-Object { $_.name.ToLower().Contains($lq) -or $_.id -like "*$lq*" } |
+                                    Sort-Object name |
+                                    Select-Object -First 15
+                                )
+                            }
+                        }
+                        Send-Json $reqCtx @{ results = $results }
                     }
 
                     '^/api/run$' {

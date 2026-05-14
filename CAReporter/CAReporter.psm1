@@ -21,6 +21,13 @@ Export-ModuleMember -Function $Public.BaseName
 # Cache well-known app IDs at module scope for performance
 $script:WellKnownAppIds = Get-WellKnownAppId
 
+# Placeholder for the lazily-fetched merill/microsoft-info app name cache.
+# Populated on first call to Get-MerillAppInfo; $null signals "not yet fetched".
+$script:MerillAppCache = $null
+# Sorted list of [PSCustomObject]@{id;name} for Graph-sourced apps — used by
+# the GUI's /api/apps/search endpoint.  Populated alongside MerillAppCache.
+$script:MerillAppSearchIndex = $null
+
 # --- Tab-completion for -Applications parameter ---
 # Maps friendly alias names to well-known application GUIDs so users can
 # press Tab and pick from a readable list instead of memorising GUIDs.

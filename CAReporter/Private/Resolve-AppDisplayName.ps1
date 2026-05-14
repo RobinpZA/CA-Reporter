@@ -21,6 +21,12 @@ function Resolve-AppDisplayName {
         return $AppNameCache[$AppId]
     }
 
+    # Try the community-maintained merill/microsoft-info list (fetched once per session)
+    $merillCache = Get-MerillAppInfo
+    if ($merillCache.ContainsKey($AppId)) {
+        return $merillCache[$AppId]
+    }
+
     # Try to resolve via Graph
     try {
         $sp = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=appId eq '$AppId'&`$select=displayName" -ErrorAction Stop

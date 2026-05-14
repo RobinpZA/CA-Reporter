@@ -176,7 +176,12 @@ function Export-CAGapReport {
 
     $scenarioLegendRows = ($Scenarios | ForEach-Object {
         $s = $_
-        $row = "<tr><td class='scenario-tag'>S$($s.Index)</td><td>$($s.Application)</td><td>$($s.ClientAppType)</td><td>$(if ($s.DevicePlatform) { $s.DevicePlatform } else { 'Any' })</td>"
+        $appLabel = switch ($s.Application) {
+            'All'  { 'All' }
+            'None' { 'None' }
+            default { Resolve-AppDisplayName -AppId $s.Application }
+        }
+        $row = "<tr><td class='scenario-tag'>S$($s.Index)</td><td>$([System.Web.HttpUtility]::HtmlEncode($appLabel))</td><td>$($s.ClientAppType)</td><td>$(if ($s.DevicePlatform) { $s.DevicePlatform } else { 'Any' })</td>"
         if ($legendHasCountry) { $row += "<td>$(if ($s.EffectiveCountry)   { [System.Web.HttpUtility]::HtmlEncode($s.EffectiveCountry) }   else { '<span style=''color:var(--text-muted)''>Any</span>' })</td>" }
         if ($legendHasIp)      { $row += "<td>$(if ($s.EffectiveIpAddress) { [System.Web.HttpUtility]::HtmlEncode($s.EffectiveIpAddress) } else { '<span style=''color:var(--text-muted)''>Any</span>' })</td>" }
         $row + '</tr>'
